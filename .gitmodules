@@ -1,0 +1,6 @@
+[submodule "SparkFun_u-blox_GNSS_v3"]
+	path = 3rdparty/SparkFun_u-blox_GNSS_v3
+	url = https://github.com/sparkfun/SparkFun_u-blox_GNSS_v3
+[submodule "3rdparty/U8g2_Arduino"]
+	path = 3rdparty/U8g2_Arduino
+	url = https://github.com/olikraus/U8g2_Arduino.git

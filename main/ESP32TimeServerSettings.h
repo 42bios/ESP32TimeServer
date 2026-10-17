@@ -1,0 +1,180 @@
+// ESP32 Time Server v3.0.4
+// Copyright Rob Latour, 2026
+// License: MIT
+// Website: https://github.com/roblatour/ESP32TimeServer
+//
+// Note: some additional settings are defined in the ESP32TimeServerSettingsSecrets.h file
+//
+
+#pragma once
+#include <cstddef>
+#include <cstdint>
+#include <ctime>
+#include "custom/setting_types.c"
+#include "ESP32TimeServerSettingsSecrets.h"
+
+// (optional) debug support
+// NOTE: setting DEBUG_ENABLED to 1 (Enabled) will degrade accuracy and performance during periods of high volume ntp requests
+#define DEBUG_ENABLED 0 // 0 = Disabled; 1 = Enabled
+static constexpr int serialMonitorSpeed = 115200;
+
+// (optional) RGB LED module support; enable support for one module type below at most
+#define RBG_LED_KY_016_MODULE_ENABLED 0 // 0 = Disabled; 1 = Enabled
+#define RBG_LED_WS2812_MODULE_ENABLED 0 // 0 = Disabled; 1 = Enabled
+
+static constexpr int RGB_LED_Brightness_Percent = 70;
+
+// The LED colours below may be changed to suit your preferences, but the descriptors should remain unchanged
+// For example: you can change LED_normal to blue but leave the descriptor 'LED_normal' unchanged
+static constexpr RGB_LED_Colour LED_startup = RGB_LED_Colour::blue;
+static constexpr RGB_LED_Colour LED_normal = RGB_LED_Colour::green;
+static constexpr RGB_LED_Colour LED_sync = RGB_LED_Colour::white;
+static constexpr RGB_LED_Colour LED_warning = RGB_LED_Colour::yellow;
+static constexpr RGB_LED_Colour LED_alert = RGB_LED_Colour::orange;
+static constexpr RGB_LED_Colour LED_critical = RGB_LED_Colour::red;
+static constexpr RGB_LED_Colour LED_button_push = RGB_LED_Colour::pink;
+
+// GPIO pin definitions for use with a KY-016 RGB LED module
+static constexpr int LEDBluePin = 4;
+static constexpr int LEDGreenPin = 5;
+static constexpr int LEDRedPin = 6;
+
+// GPIO pin definitions for a WS2812 RGB LED module
+static constexpr int WS2812DataPin = 4;
+
+// (optional) attached LCD support
+#define LIQUID_CRYSTAL_DISPLAY_ENABLED 0 // 0 = Disabled; 1 = Enabled
+static constexpr int lcdColumns = 20;
+static constexpr int lcdRows = 4;
+static constexpr char lcdTopLineTitle[] = "ESP32 Time Server"; // text on the LCD's top line (max 17 characters; the last 3 columns are reserved for status indicators)
+static constexpr bool display24HourFormat = true;             // set to true for 24-hour format, false for 12-hour format
+static constexpr bool displayHoursWithPaddedZero = false;      // set to true to pad the hour with a leading zero when less than 10, false not to pad
+static constexpr bool displayTimeZone = false;
+static constexpr int lcdI2CAddressPrimary = 0x27;
+static constexpr int lcdI2CAddressSecondary = 0x3F;
+
+// (optional) uptime / reset momentary button support
+#define UPTIME_RESTART_BUTTON_ENABLED 0 // 0 = Disabled; 1 = Enabled
+static constexpr unsigned long holdUpTimeRestartButtonForThisManySecondsToTriggerAReset = 10UL;
+static constexpr int upTimeDisplayWillStayActiveForThisManySeconds = 10;
+// GPIO pin definitions for the uptime / reset momentary button
+static constexpr int upTimeRestartPin = 3;
+
+// (optional) Over The Ethernet updates support
+// Please also see ESP32TimeServerSettingsSecretes.h for the configuration of the OTE password.
+#define OTE_UPDATES_ENABLED 0 // 0 = Disabled; 1 = Enabled
+static constexpr char DeviceName[] = "ESP32TimeServer";
+static constexpr uint16_t OTEPort = 3232;
+
+// (optional) NTPv4 symmetric-key packet authentication.
+// When enabled, only authenticated NTPv4 requests with a valid configured key receive signed replies.
+// However, non-authenticated NTPv4 requests are still processed as normal requests without authentication.
+// Please also see ESP32TimeServerSettingsSecretes.h for the configuration of symmetric keys.
+#define SYMMETRIC_KEY_AUTHENTICATION_ENABLED 1 // 0 = Disabled; 1 = Enabled
+
+// (optional) setting of the ESP32-P4's MAC address support
+// set the value below to "" to use the ESP32-P4's default MAC address, or
+// set the value below to a desired MAC address, such as "80:f1:b2:d1:d9:18"
+static constexpr char MACAddress[] = "";
+
+// (optional) setting a static IP address for the ESP32-P4 support
+// set StaticIPAddress to "" to use DHCP (the default behaviour), which allows the router to
+// auto-assign an IP address, or set it to a desired static IP address such as "192.168.1.100".
+// when a static IP address is set, Gateway and SubnetMask must also be provided.
+// PrimaryDNS and SecondaryDNS are optional; leave them as "" to omit them.
+static constexpr char StaticIPAddress[] = ""; // optional - leave as "" to omit, or for example: 192.168.1.100
+static constexpr char Gateway[] = "";         // optional - leave as "" to omit, or for example: : 192.168.1.1
+static constexpr char SubnetMask[] = "";      // optional - leave as "" to omit, or for example: 255.255.255.0
+static constexpr char PrimaryDNS[] = "";      // optional - leave as "" to omit, or for example: 8.8.8.8
+static constexpr char SecondaryDNS[] = "";    // optional - leave as "" to omit, or for example: 1.1.1.1
+
+// Preference for network connection
+static constexpr int PreferIPvX = 4; // 0 - dual-stack (uses both IPv4 and IPv6), LCD shows both IPv4 and IPv6 addresses
+                                     // 1 - use IPv4 only, LCD shows IPv4 address only
+                                     // 2 - use IPv6 only, LCD shows IPv6 address only
+                                     // 4 - dual-stack, but LCD shows IPv4 address only
+                                     // 6 - dual-stack, but LCD shows IPv6 address only
+                                     // 8 - dual-stack, but LCD shows IPv4 and IPv6 address status only ("IPv4: OK/N/A  IPv6: GUA/ULA/LLA/N/A")
+                                     // 9 - dual-stack, but leave the LCD bottom line blank for privacy/security reasons
+                                     //
+                                     // Notes: 
+                                     // - With prefer IPv4: if an IPv6 address is offered it will be temporarily accepted,
+                                     //   until an IPv4 offer comes in at which time the program will automatically switch over
+                                     //   to an IPv4 address.
+                                     // - The same is true, in reverse, for prefer IPv6.
+                                     // - With a value of 0, 4, 6, 8, or 9 NTP requests from both IPv4 and IPv6 clients are accepted.
+                                     // - With values 1 and 2, NTP requests are accepted only on the selected IP version.
+                                     // - For IPv6 addresses, the LCD will display the appropriate status based on highest scope address type 
+                                     //   (Global-Unicast address (GUA), Unique-Local address (ULA), or Link-Local address (LLA)) assigned:
+                                     //   i.e. if a GUA is assigned it will be shown, otherwise if a ULA is assigned it will be shown,
+                                     //   otherwise if a LLA is assigned it will be shown.
+
+// (required) Time zone setting for your region - for more information see https://gist.github.com/alwynallan/24d96091655391107939
+static constexpr const char *timeZoneSpec = "CET-1CEST,M3.5.0,M10.5.0/3";
+
+// Unless you know what you are doing, the options below should be left as is
+
+// This project was designed and tested to work with a SparkFun GNSS Receiver Breakout board which uses a u-blox - MAX-M10S module.
+// ( https://www.sparkfun.com/sparkfun-gnss-receiver-breakout-max-m10s-qwiic.html )
+// However, the code has fallback logic for non/cloned/older u-blox gnss modules and has been tested with one such device as well.
+//
+// The setting below determines if the code should provide processing for other (than the MAX-M10S) gnss module - even if they are less capable/potentially less accurate.
+
+// Note: even if fallback processing is set to true below, accuracy should still be fine as long as PPS is disciplined.
+// For more information here are some detailed timing accuracy notes:
+// - This firmware timestamps NTP responses using gettimeofday() system call, which is backed by the ESP32-P4's high-resolution timer
+//   driven by the built-in 40 MHz external XTAL via the APB clock (~10 ppm). This is the most accurate clock available
+//   on this chip; no external 32.768 kHz RTC crystal is needed or beneficial for NTP timestamping purposes.
+// - The PPS discipline task applies continuous sub-second corrections on every GNSS PPS pulse.
+//   This reduces inter-sync error to well under 1 ms, limited mainly by interrupt latency (~10-100 us).
+// - Preferred GNSS (MAX-M10S) connects at 921600 baud, minimizing serial latency and enabling faster, more precise time
+//   message processing. Fallback modules may be limited to 9600 baud, introducing additional parsing delay and reducing
+//   the accuracy of the time set at each GNSS resync.
+
+static constexpr bool allowFallbackProcessing = true;
+
+static constexpr uint32_t periodicGNSSRefreshEveryThisNumberOfMinutes = 5UL; // resync with GNSS every 5 minutes (recommended)
+
+// a reboot during setup may be required to facilitate initial setup of non/clone/older u-blox gnss modules;
+// recommend leaving it set to true unless code continually restarts when this setting is used
+static constexpr bool rebootIfGNSSBaudChangeCommandSucceedsButImmediateReconnectFails = true;
+
+static constexpr time_t safeguardThresholdInSeconds = 1; // When a new GNSS reading is taken the difference between it and the last reading
+                                                         // should be sub-second, if not a sanity check safeguard flag is tripped
+
+static constexpr bool rebootIfSanityCheckFails = true; // Further to the above,
+                                                       // if the sanity check fails, the system will either:
+                                                       // - automatically reboot if this setting is set to true, or
+                                                       // - display double asterisks'**' on the LCD screen to indicate an issue with the GNSS
+                                                       //   and then will providing the esp32's time, unsynced by the GNSS, moving forward.
+
+// (required) GNSS support; do not change these unless you know what you are doing
+
+// IMPORTANT NOTES: ***************************************************************************************
+// Some GNSS receivers and breakout boards provide a 3.3v PPS (Pulse-Per-Second) output pin               *
+// while others provide a 5v PPS output pin.                                                              *
+// 1. Only connect a 3.3v PPS pin to an ESP32 GPIO pin, never connect a 5v PPS pin to an ESP32 GPIO pin   *
+// 2. For the wire between the ESP32-P4's GPIO pin and the GNSS Receiver's PPS pin                        *
+//    use as short and as well connect wire as possible; a standard copper Dupont wire                    *
+//    will be fine assuming its gauge is between 24 AWG and 28AWG                                         *
+// 3. The GNSS GND must be connected to the ESP32 GND                                                     *
+// ********************************************************************************************************
+
+#define UBLOX_COMPLIANT_GNSS_RECEIVER_ENABLED 1 // 0 = Disabled; 1 = Enabled
+// The following only needs to be set if your receiver does not use a U-Blox or U-Block clone GNSS chip
+static constexpr uint32_t baudRateForUbloxNonCompliantGNSSReceiver = 115200;
+
+// (required) GPIO pin definitions for the GNSS module
+static constexpr int TXPin = 22;  // note: prior to release 2.4 pin 16 was used for TX
+static constexpr int RXPin = 21;  // note: prior to release 2.4 pin 17 was used for RX
+static constexpr int PPSPin = 20; // note: prior to release 2.4 pin 18 was used for PPS
+
+// (required) GPIO pin definitions for the Waveshare:
+// ESP32-P4-ETH, ESP32-P4-POE-ETH, ESP32-P4-WIFI-ETH, ESP32-P4-WIFI-POE-ETH
+// if your using this board do not change these
+static constexpr int TFCardCommandPin = 44;
+static constexpr int TFCardClockPin = 43;
+static constexpr int TFCardData3Pin = 42;
+static constexpr int TFCardData2Pin = 41;
+static constexpr int TFCardData1Pin = 40;
+static constexpr int TFCardData0Pin = 39;
